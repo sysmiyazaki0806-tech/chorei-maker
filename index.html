@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>朝礼メーカー</title>
+<style>
+  :root {
+    --navy: #1f3a5f;
+    --gold: #b39759;
+    --paper: #f7f5f0;
+    --ink: #23272e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #e9e6df;
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "游ゴシック", Meiryo, sans-serif;
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 16px 12px 40px;
+  }
+  h1 { font-size: 15px; letter-spacing: .2em; color: var(--navy); margin: 4px 0 12px; }
+
+  /* ===== ステージ（この枠を画面収録する） ===== */
+  #stageWrap { width: 100%; display: flex; justify-content: center; }
+  #stage {
+    position: relative; overflow: hidden;
+    background: linear-gradient(160deg, #20395c 0%, #16273f 100%);
+    aspect-ratio: 16 / 9;
+    width: min(100%, 960px);
+    border-radius: 6px;
+    box-shadow: 0 6px 30px rgba(0,0,0,.25);
+    user-select: none;
+  }
+  #stage.v { aspect-ratio: 9 / 16; width: min(100%, 420px); max-height: 82vh; }
+  #stage:fullscreen { border-radius: 0; width: 100vw; height: 100vh; aspect-ratio: auto; }
+
+  /* 背景の飾り（静かな斜め光） */
+  #stage::before {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(115deg, transparent 55%, rgba(255,255,255,.045) 55.2%, rgba(255,255,255,.045) 70%, transparent 70.2%);
+    pointer-events: none;
+  }
+
+  /* ヘッダー帯 */
+  #head {
+    position: absolute; top: 0; left: 0; right: 0;
+    display: flex; align-items: baseline; gap: 3%;
+    padding: 2.2% 3.5%;
+  }
+  #head .brand { color: #fff; font-size: clamp(12px, 2.4cqw, 20px); letter-spacing: .3em; font-weight: 700; }
+  #head .date { color: rgba(255,255,255,.85); font-size: clamp(10px, 1.9cqw, 16px); margin-left: auto; }
+  #head::after { content: ""; position: absolute; left: 3.5%; right: 3.5%; bottom: 0; height: 1px; background: var(--gold); opacity: .8; }
+
+  /* スライド */
+  #slide {
+    position: absolute;
+    left: 3.5%; top: 14%; width: 68%; bottom: 20%;
+    background: var(--paper);
+    border-radius: 4px;
+    padding: 3% 3.4%;
+    box-shadow: 0 3px 18px rgba(0,0,0,.3);
+    overflow: hidden;
+    container-type: size;
+  }
+  #stage.v #slide { left: 5%; right: 5%; width: auto; top: 9%; bottom: 46%; }
+  #slideTitle {
+    font-size: 24px; /* 古いブラウザ用の保険 */
+    font-size: clamp(14px, 9cqh, 34px); font-weight: 800; color: var(--navy);
+    border-bottom: 2px solid var(--gold);
+    padding-bottom: 2.5%; margin-bottom: 4%;
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+  }
+  #bullets { list-style: none; }
+  #bullets li {
+    font-size: 17px; /* 古いブラウザ用の保険 */
+    font-size: clamp(12px, 7cqh, 24px);
+    line-height: 1.55;
+    margin: 1.6% 0;
+    padding-left: 1.1em;
+    position: relative;
+    color: #6b7280;
+    transition: color .3s;
+  }
+  #bullets li::before { content: "・"; position: absolute; left: 0; color: #c9c2b2; }
+  #bullets li.now { color: var(--ink); font-weight: 700; }
+  #bullets li.now::before { content: "▶"; color: var(--gold); font-size: .75em; top: .22em; }
+  #bullets li.done { color: var(--ink); }
+
+  /* キャラクター「ハヤト」（光る結晶・ふわふわ浮遊） */
+  #chara {
+    position: absolute; right: 2%; bottom: 2%;
+    width: 27%; max-width: 300px;
+    pointer-events: none;
+    filter: drop-shadow(0 0 18px rgba(90,170,255,.45));
+    animation: floaty 4.5s ease-in-out infinite;
+  }
+  #stage.v #chara { width: 58%; right: -4%; bottom: 12%; }
+  @keyframes floaty {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-2.5%); }
+  }
+  /* 画像モード（自前の立ち絵を使う場合） */
+  #charaImgBox { position: absolute; right: 1.5%; bottom: 0; width: 30%; display: none; pointer-events: none; }
+  #charaImgBox img { width: 100%; display: block; }
+  #mouthPatch { position: absolute; overflow: hidden; }
+  #mouthPatch img { position: absolute; }
+
+  /* 字幕 */
+  #cap {
+    position: absolute; left: 4%; right: 4%; bottom: 4.5%;
+    text-align: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 20px; /* 古いブラウザ用の保険 */
+    font-size: clamp(15px, 3.4cqw, 30px);
+    line-height: 1.5;
+    text-shadow: 0 0 4px #000, 0 0 4px #000, 2px 2px 2px #000, -2px 2px 2px #000, 2px -2px 2px #000, -2px -2px 2px #000;
+    pointer-events: none;
+  }
+  #stage.v #cap { bottom: 3%; font-size: clamp(14px, 5.4cqw, 26px); }
+
+  /* 再生ボタン・終了カード */
+  #playBtn {
+    position: absolute; inset: 0; margin: auto;
+    width: 108px; height: 108px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.8);
+    background: rgba(31,58,95,.55);
+    color: #fff; font-size: 34px; cursor: pointer;
+    backdrop-filter: blur(2px);
+    transition: transform .15s;
+  }
+  #playBtn:hover { transform: scale(1.06); }
+  #playBtn small { display: block; font-size: 12px; letter-spacing: .2em; margin-top: 2px; }
+  #endCard {
+    position: absolute; inset: 0; display: none;
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+    background: rgba(22,39,63,.88); color: #fff;
+  }
+  #endCard .big { font-size: clamp(18px, 4cqw, 34px); font-weight: 800; letter-spacing: .15em; }
+  #endCard button { padding: 8px 22px; border: 1px solid #fff; background: transparent; color: #fff; border-radius: 3px; cursor: pointer; }
+
+  /* ===== ステージ外のコントロール ===== */
+  #controls {
+    width: min(100%, 960px);
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    margin-top: 12px;
+  }
+  #controls button, #controls select {
+    padding: 8px 14px; font-size: 13px;
+    border: 1px solid #c8c2b4; background: #fff; color: var(--ink);
+    border-radius: 4px; cursor: pointer;
+  }
+  #controls button.primary { background: var(--navy); color: #fff; border-color: var(--navy); }
+  #controls label { font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 6px; }
+  #controls input[type=range] { width: 90px; }
+
+  /* 台本エディタ */
+  #editor {
+    width: min(100%, 960px); margin-top: 12px; display: none;
+    background: #fff; border: 1px solid #c8c2b4; border-radius: 6px; padding: 14px;
+  }
+  #editor.open { display: block; }
+  #editor .hint { font-size: 12px; color: #6b7280; line-height: 1.8; margin-bottom: 8px; }
+  #editor .hint code { background: #f1ede3; padding: 0 6px; border-radius: 3px; color: var(--navy); }
+  #scriptBox {
+    width: 100%; height: 260px; font-size: 13.5px; line-height: 1.8;
+    font-family: inherit; padding: 10px; border: 1px solid #d8d2c4; border-radius: 4px; resize: vertical;
+  }
+  #editor .row { display: flex; gap: 8px; margin-top: 8px; }
+  #editor .row button { padding: 8px 16px; font-size: 13px; border-radius: 4px; cursor: pointer; border: 1px solid #c8c2b4; background: #fff; }
+  #editor .row button.primary { background: var(--navy); color: #fff; border-color: var(--navy); }
+
+  .tips { width: min(100%, 960px); font-size: 12px; color: #8a8578; margin-top: 14px; line-height: 1.9; }
+  .tips b { color: var(--navy); }
+
+  /* ===== シアターモード（iPhoneなど全画面API非対応の端末用） ===== */
+  body.theater { padding: 0; background: #000; }
+  body.theater h1, body.theater #controls, body.theater #editor, body.theater .tips { display: none; }
+  body.theater #stageWrap {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    background: #000;
+  }
+  body.theater #stage { width: min(100vw, calc(100vh * 16 / 9)); max-height: 100vh; border-radius: 0; }
+  body.theater #stage.v { width: min(100vw, calc(100vh * 9 / 16)); height: auto; max-height: 100vh; }
+  #exitTheater {
+    display: none;
+    position: fixed; top: 10px; right: 10px; z-index: 60;
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,.5); background: rgba(0,0,0,.35); color: #fff;
+    font-size: 15px; cursor: pointer; opacity: .55;
+  }
+  body.theater #exitTheater { display: block; }
+  body.theater.playing #exitTheater { display: none; } /* 収録中は映り込まないよう非表示 */
+</style>
+</head>
+<body>
+
+<h1>朝礼メーカー</h1>
+
+<div id="stageWrap">
+  <div id="stage">
+    <div id="head">
+      <span class="brand" id="brandTxt">朝礼</span>
+      <span class="date" id="dateTxt"></span>
+    </div>
+
+    <div id="slide">
+      <div id="slideTitle"></div>
+      <ul id="bullets"></ul>
+    </div>
+
+    <!-- 内蔵キャラ「ハヤト」＝光る結晶（しゃべると発光が明滅する） -->
+    <svg id="chara" viewBox="0 0 300 360" aria-hidden="true">
+      <defs>
+        <radialGradient id="coreGrad" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#ffffff"/>
+          <stop offset="35%" stop-color="#bfe6ff"/>
+          <stop offset="75%" stop-color="#4da6ff"/>
+          <stop offset="100%" stop-color="#4da6ff" stop-opacity="0"/>
+        </radialGradient>
+        <linearGradient id="facetA" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#dff4ff"/>
+          <stop offset="100%" stop-color="#4da6ff"/>
+        </linearGradient>
+        <linearGradient id="facetB" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#8fd0ff"/>
+          <stop offset="100%" stop-color="#1c5fae"/>
+        </linearGradient>
+        <linearGradient id="facetC" x1="1" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#a8dcff"/>
+          <stop offset="100%" stop-color="#123f7a"/>
+        </linearGradient>
+        <filter id="gemGlow" x="-80%" y="-80%" width="260%" height="260%">
+          <feGaussianBlur stdDeviation="10" result="b"/>
+          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+
+      <!-- 足元の淡い光 -->
+      <ellipse cx="150" cy="330" rx="70" ry="12" fill="#4da6ff" opacity=".18"/>
+
+      <!-- 光線（しゃべると強くなる） -->
+      <g id="gemRays" opacity="0.15" filter="url(#gemGlow)">
+        <polygon points="150,8 156,96 144,96" fill="#bfe6ff"/>
+        <polygon points="150,332 156,254 144,254" fill="#bfe6ff" opacity=".7"/>
+        <polygon points="34,170 118,164 118,176" fill="#bfe6ff"/>
+        <polygon points="266,170 182,164 182,176" fill="#bfe6ff"/>
+        <polygon points="70,70 126,124 118,132" fill="#9fd6ff" opacity=".8"/>
+        <polygon points="230,70 174,124 182,132" fill="#9fd6ff" opacity=".8"/>
+        <polygon points="70,272 124,214 132,222" fill="#9fd6ff" opacity=".6"/>
+        <polygon points="230,272 176,214 168,222" fill="#9fd6ff" opacity=".6"/>
+      </g>
+
+      <!-- 結晶本体 -->
+      <g id="gemBody" filter="url(#gemGlow)">
+        <!-- クラウン（上部） -->
+        <polygon points="150,50 197,128 103,128" fill="url(#facetA)" opacity=".95"/>
+        <polygon points="150,50 103,128 68,128" fill="url(#facetB)" opacity=".9"/>
+        <polygon points="150,50 197,128 232,128" fill="url(#facetC)" opacity=".9"/>
+        <!-- パビリオン（下部） -->
+        <polygon points="68,128 150,296 103,128" fill="url(#facetC)" opacity=".92"/>
+        <polygon points="103,128 197,128 150,296" fill="url(#facetA)" opacity=".98"/>
+        <polygon points="197,128 232,128 150,296" fill="url(#facetB)" opacity=".92"/>
+        <!-- 稜線 -->
+        <polyline points="68,128 232,128" stroke="#eaf7ff" stroke-width="1.6" fill="none" opacity=".85"/>
+        <polyline points="103,128 150,50 197,128" stroke="#eaf7ff" stroke-width="1.1" fill="none" opacity=".6"/>
+        <polyline points="103,128 150,296 197,128" stroke="#eaf7ff" stroke-width="1.1" fill="none" opacity=".55"/>
+        <!-- コア（発話で明滅） -->
+        <circle id="gemCore" cx="150" cy="150" r="30" fill="url(#coreGrad)" opacity=".8"/>
+        <!-- きらめき（アイドル時に時々光る） -->
+        <g id="sparkle" opacity="0">
+          <polygon points="112,86 116,96 126,100 116,104 112,114 108,104 98,100 108,96" fill="#ffffff"/>
+        </g>
+      </g>
+
+      <!-- 浮遊する粒 -->
+      <g id="motes" fill="#bfe6ff">
+        <circle cx="82" cy="210" r="3" opacity=".7"/>
+        <circle cx="228" cy="190" r="2.4" opacity=".6"/>
+        <circle cx="205" cy="255" r="2" opacity=".5"/>
+        <circle cx="95" cy="120" r="2" opacity=".5"/>
+      </g>
+    </svg>
+
+    <!-- 画像モード用（CONFIG.imageSrc設定時のみ表示） -->
+    <div id="charaImgBox"></div>
+
+    <div id="cap"></div>
+
+    <button id="playBtn">▶<small>START</small></button>
+
+    <div id="endCard">
+      <div class="big">本日もよろしくお願いします</div>
+      <button onclick="resetAll()">最初に戻る</button>
+    </div>
+  </div>
+</div>
+
+<div id="controls">
+  <button class="primary" onclick="startPlay()">▶ 再生</button>
+  <button onclick="togglePause(this)">⏸ 一時停止</button>
+  <button onclick="stopPlay()">⏹ 停止</button>
+  <button onclick="toggleAspect()">縦 / 横 切替</button>
+  <button onclick="goFullscreen()">⛶ 全画面（収録用）</button>
+  <button onclick="toggleEditor()">✎ 台本を編集</button>
+  <label>声 <select id="voiceSel"></select></label>
+  <label>速さ <input type="range" id="rateRange" min="0.6" max="1.6" step="0.05" value="1.0"><span id="rateVal">1.0</span></label>
+</div>
+
+<div id="editor">
+  <div class="hint">
+    書き方: <code># タイトル</code> の行で新しいスライド、その下の各行が「セリフ＝箇条書き＝字幕」になります。<br>
+    <code>{{date}}</code>=今日の日付 / <code>{{youbi}}</code>=曜日 が自動で入ります。編集内容はこの端末に自動保存されます。
+  </div>
+  <textarea id="scriptBox" spellcheck="false"></textarea>
+  <div class="row">
+    <button class="primary" onclick="applyScript()">反映する</button>
+    <button onclick="resetScript()">初期の台本に戻す</button>
+  </div>
+</div>
+
+<button id="exitTheater" onclick="exitTheater()">✕</button>
+
+<p class="tips">
+  <b>動画にするには:</b> 「全画面（収録用）」を押してから画面収録（iPhone: コントロールセンターの収録ボタン ／ Windows: Win＋G）→ 再生 → 収録停止。
+  TikTok用は「縦 / 横 切替」で縦にしてから収録してください。<b>音も入れるには</b>スマホはマイク収録ON、PCはシステム音声を含める設定に。<br>
+  <b>iPhoneのコツ:</b> Safariで開くのがおすすめ。<b>横の消音スイッチがONだと声が出ません</b>。全画面の終了は右上の✕（再生中は消えます。停止すると戻ります）。
+</p>
+
+<script>
+/* =====================================================
+ * 設定（ここを書き換えて調整できます）
+ * ===================================================== */
+const CONFIG = {
+  brand: '朝礼',          // 左上の帯の文字（会社名・チーム名に変えてOK）
+  flapMs: 120,            // 口パクの間隔（ミリ秒）
+  fallbackMsPerChar: 150, // 音声が使えない端末での1文字あたり表示時間
+  // 自前の立ち絵画像を使う場合はパスを入れる（例: 'chara.png'。同じフォルダに置く）
+  imageSrc: '',
+  // 画像モードの口の位置（画像の幅を1とした比率。あとから数値で微調整）
+  mouth: { x: 0.42, y: 0.55, w: 0.16, h: 0.10 },
+};
+
+/* 初期台本（#がスライドタイトル、下の行がセリフ） */
+const DEFAULT_SCRIPT = `# 朝礼を始めます
+おはようございます。{{date}}、{{youbi}}曜日の朝礼を始めます。
+今日も一日、よろしくお願いします。
+
+# 今日やること
+今日の予定を、ここに書いてください。
+一行が、ひとつのセリフになります。
+
+# 今日のひとこと
+小さくてもいいので、今日の目標をひとつ決めましょう。
+
+# 締め
+それでは今日も、いい一日にしましょう。
+いってらっしゃい。`;
+
+/* =====================================================
+ * 台本の読み込み・差し込み
+ * ===================================================== */
+const $ = id => document.getElementById(id);
+const LS_KEY = 'chorei_script_v1';
+let slides = [];       // [{title, lines:[]}]
+let playing = false, paused = false, stopped = false;
+
+function todayTokens() {
+  const d = new Date();
+  const youbi = '日月火水木金土'.charAt(d.getDay());
+  return {
+    date: (d.getMonth() + 1) + '月' + d.getDate() + '日',
+    youbi: youbi,
+    time: d.getHours() + '時' + (d.getMinutes() ? d.getMinutes() + '分' : ''),
+  };
+}
+function fillTokens(s) {
+  const t = todayTokens();
+  return s.replace(/\{\{date\}\}/g, t.date).replace(/\{\{youbi\}\}/g, t.youbi).replace(/\{\{time\}\}/g, t.time);
+}
+
+function parseScript(text) {
+  const out = [];
+  let cur = null;
+  text.split(/\r?\n/).forEach(line => {
+    const s = line.trim();
+    if (!s) return;
+    if (s.startsWith('#')) {
+      cur = { title: fillTokens(s.replace(/^#+\s*/, '')), lines: [] };
+      out.push(cur);
+    } else {
+      if (!cur) { cur = { title: '', lines: [] }; out.push(cur); }
+      cur.lines.push(fillTokens(s.replace(/^[-・]\s*/, '')));
+    }
+  });
+  return out.filter(sl => sl.lines.length || sl.title);
+}
+
+function currentScriptText() {
+  return localStorage.getItem(LS_KEY) || DEFAULT_SCRIPT;
+}
+function loadScript() {
+  slides = parseScript(currentScriptText());
+}
+
+/* =====================================================
+ * 画面表示
+ * ===================================================== */
+function showSlide(i, lineIdx) {
+  const sl = slides[i];
+  $('slideTitle').textContent = sl.title || '';
+  const ul = $('bullets');
+  ul.innerHTML = '';
+  sl.lines.forEach((ln, j) => {
+    const li = document.createElement('li');
+    li.textContent = ln.length > 42 ? ln.slice(0, 41) + '…' : ln;
+    if (j < lineIdx) li.className = 'done';
+    if (j === lineIdx) li.className = 'now';
+    ul.appendChild(li);
+  });
+}
+
+function setHeaderDate() {
+  const t = todayTokens();
+  $('dateTxt').textContent = t.date + '（' + t.youbi + '）';
+  $('brandTxt').textContent = CONFIG.brand;
+}
+
+/* =====================================================
+ * 音声合成＋口パク
+ * ===================================================== */
+let voices = [], flapTimer = null, blinkTimer = null;
+
+function refreshVoices() {
+  voices = speechSynthesis.getVoices().filter(v => /ja/i.test(v.lang));
+  const sel = $('voiceSel');
+  sel.innerHTML = '';
+  if (!voices.length) {
+    sel.innerHTML = '<option>標準</option>';
+    return;
+  }
+  voices.forEach((v, i) => {
+    const o = document.createElement('option');
+    o.value = i; o.textContent = v.name.replace(/Microsoft |Google /,'').slice(0, 18);
+    sel.appendChild(o);
+  });
+}
+if ('speechSynthesis' in window) {
+  refreshVoices();
+  speechSynthesis.onvoiceschanged = refreshVoices;
+}
+
+function speakLine(text) {
+  return new Promise(resolve => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; stopFlap(); resolve(); } };
+    // 音声が使えない環境でも進むフォールバック
+    const fb = setTimeout(finish, Math.max(1800, text.length * CONFIG.fallbackMsPerChar));
+    if ('speechSynthesis' in window) {
+      try {
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'ja-JP';
+        u.rate = Number($('rateRange').value);
+        const vi = Number($('voiceSel').value);
+        if (voices[vi]) u.voice = voices[vi];
+        u.onend = () => { clearTimeout(fb); setTimeout(finish, 220); };
+        u.onerror = () => { clearTimeout(fb); finish(); };
+        speechSynthesis.speak(u);
+      } catch (e) { /* フォールバックに任せる */ }
+    }
+    startFlap();
+  });
+}
+
+/* 発話中は結晶のコアと光線が明滅する（口パクの代わり） */
+function startFlap() {
+  stopFlap();
+  const core = $('gemCore'), rays = $('gemRays');
+  flapTimer = setInterval(() => {
+    const p = Math.random();                       // 0〜1 の強さ
+    core.setAttribute('r', (30 + p * 16).toFixed(1));
+    core.style.opacity = (0.75 + p * 0.25).toFixed(2);
+    rays.style.opacity = (0.3 + p * 0.7).toFixed(2);
+    flapImageMouth(p);
+  }, CONFIG.flapMs);
+}
+function stopFlap() {
+  clearInterval(flapTimer); flapTimer = null;
+  const core = $('gemCore'), rays = $('gemRays');
+  if (core) { core.setAttribute('r', 30); core.style.opacity = '.8'; }
+  if (rays) rays.style.opacity = '0.15';
+  flapImageMouth(0);
+}
+
+/* アイドル時、ときどききらめく */
+function startBlink() {
+  blinkTimer = setInterval(() => {
+    const sp = $('sparkle');
+    if (!sp) return;
+    sp.style.transition = 'opacity .18s';
+    sp.style.opacity = '1';
+    setTimeout(() => { sp.style.opacity = '0'; }, 320);
+  }, 2900);
+}
+
+/* 画像モードの口パク（imageSrc設定時のみ） */
+function setupImageMode() {
+  if (!CONFIG.imageSrc) return;
+  const box = $('charaImgBox');
+  $('chara').style.display = 'none';
+  box.style.display = 'block';
+  const m = CONFIG.mouth;
+  box.innerHTML =
+    '<img src="' + CONFIG.imageSrc + '">' +
+    '<div id="mouthPatch" style="left:' + m.x * 100 + '%;top:' + m.y * 100 + '%;width:' + m.w * 100 + '%;height:' + m.h * 100 + '%">' +
+    '<img src="' + CONFIG.imageSrc + '" style="width:' + (100 / m.w) + '%;left:' + (-m.x * 100 / m.w) + '%;top:' + (-m.y * 100 / m.h) + '%">' +
+    '</div>';
+}
+function flapImageMouth(rate) {
+  const p = document.getElementById('mouthPatch');
+  if (!p) return;
+  p.style.transform = 'scaleY(' + (1 + rate * 0.5) + ')';
+  p.style.transformOrigin = 'center top';
+}
+
+/* =====================================================
+ * 再生制御
+ * ===================================================== */
+async function startPlay() {
+  if (playing) return;
+  playing = true; paused = false; stopped = false;
+  document.body.classList.add('playing');
+  $('playBtn').style.display = 'none';
+  $('endCard').style.display = 'none';
+  loadScript(); setHeaderDate();
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+
+  for (let i = 0; i < slides.length; i++) {
+    for (let j = 0; j < slides[i].lines.length; j++) {
+      if (stopped) { endPlaying_(); return; }
+      while (paused) { await wait(150); if (stopped) { endPlaying_(); return; } }
+      showSlide(i, j);
+      $('cap').textContent = slides[i].lines[j];
+      await speakLine(slides[i].lines[j]);
+    }
+    await wait(400);
+  }
+  $('cap').textContent = '';
+  $('endCard').style.display = 'flex';
+  endPlaying_();
+}
+function endPlaying_() { playing = false; document.body.classList.remove('playing'); }
+
+function togglePause(btn) {
+  if (!playing) return;
+  paused = !paused;
+  if ('speechSynthesis' in window) { paused ? speechSynthesis.pause() : speechSynthesis.resume(); }
+  btn.textContent = paused ? '▶ 再開' : '⏸ 一時停止';
+}
+function stopPlay() {
+  stopped = true; paused = false;
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  stopFlap();
+  resetAll();
+}
+function resetAll() {
+  $('endCard').style.display = 'none';
+  $('playBtn').style.display = '';
+  $('cap').textContent = '';
+  loadScript();
+  if (slides.length) showSlide(0, -1);
+}
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* =====================================================
+ * UI（縦横・全画面・エディタ）
+ * ===================================================== */
+function toggleAspect() { $('stage').classList.toggle('v'); }
+function goFullscreen() {
+  const st = $('stage');
+  if (st.requestFullscreen) { st.requestFullscreen(); return; }
+  if (st.webkitRequestFullscreen) { st.webkitRequestFullscreen(); return; }
+  // iPhoneのSafariは全画面APIが無いため、シアターモードで代替
+  document.body.classList.add('theater');
+}
+function exitTheater() { document.body.classList.remove('theater'); }
+function toggleEditor() {
+  const ed = $('editor');
+  ed.classList.toggle('open');
+  if (ed.classList.contains('open')) $('scriptBox').value = currentScriptText();
+}
+function applyScript() {
+  localStorage.setItem(LS_KEY, $('scriptBox').value);
+  resetAll();
+  flash('反映しました。▶再生で確認できます。');
+}
+function flash(msg) {
+  let el = $('flashMsg');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'flashMsg';
+    el.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f3a5f;color:#fff;padding:10px 22px;border-radius:4px;font-size:13px;z-index:99;box-shadow:0 4px 14px rgba(0,0,0,.3);transition:opacity .4s';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.opacity = '0'; }, 2200);
+}
+function resetScript() {
+  localStorage.removeItem(LS_KEY);
+  $('scriptBox').value = DEFAULT_SCRIPT;
+  resetAll();
+}
+
+$('rateRange').addEventListener('input', e => { $('rateVal').textContent = Number(e.target.value).toFixed(2).replace(/0$/,''); });
+$('playBtn').addEventListener('click', startPlay);
+
+/* 初期化 */
+setupImageMode();
+setHeaderDate();
+loadScript();
+if (slides.length) showSlide(0, -1);
+startBlink();
+</script>
+</body>
+</html>
